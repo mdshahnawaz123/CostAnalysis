@@ -26,7 +26,7 @@ namespace CostAnalysis.UI
             Tv_Explore.Items.Clear();
 
             // Expect top-level categories from your helper
-            IEnumerable<Category> revitCategories = Extension.DataLab.categories(_doc);
+            IEnumerable<Category> revitCategories = Extension.DataLab.Categories(_doc);
 
             // Map to view-model nodes (with counts & BuiltInCategory)
             var nodes = revitCategories

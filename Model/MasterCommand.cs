@@ -1,6 +1,7 @@
 ﻿using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
+using CostAnalysis.Extension;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -17,21 +18,26 @@ namespace CostAnalysis.Model
         {
             var uidoc = commandData.Application.ActiveUIDocument;
             var doc = uidoc.Document;
+            var app = doc.Application;
 
-            var collector = new FilteredElementCollector(doc)
-                .OfClass(typeof(Family))
-                .WhereElementIsNotElementType()
-                .ToList();
+            //Lets Talk about Shared Parameters:
+            var definactionFile = app.OpenSharedParameterFile(); //Lets check sharedfile are there are not:
 
-            foreach ( var element in collector )
+            if(definactionFile == null)
             {
-                var family = element as Family;
-                if ( family != null )
-                {
-                    var nam = family.Name;
-                }
+                TaskDialog.Show("Error", "No Shared Parameter File is assigned in Revit Options, Please Create the Shared-Parameter ");
+                return Result.Failed;
             }
-            TaskDialog.Show("Message","");
+
+            //Lets Check for the Group:
+
+            var group = definactionFile.Groups.get_Item("ECD_ABS_Parameters");
+
+            //Lets Create the Shared Parameters if not exist:
+
+
+
+
             return Result.Succeeded;
         }
     }

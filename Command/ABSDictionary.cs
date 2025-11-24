@@ -20,7 +20,6 @@ namespace CostAnalysis.Command
 
             var frm = new UI.ABSUI(doc, uidoc);
             frm.Show();
-
             return Result.Succeeded;
         }
     }

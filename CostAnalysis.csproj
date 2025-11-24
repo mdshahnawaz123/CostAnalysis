@@ -45,6 +45,9 @@
     <Reference Include="Microsoft.Bcl.HashCode, Version=6.0.0.0, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51, processorArchitecture=MSIL">
       <HintPath>packages\Microsoft.Bcl.HashCode.6.0.0\lib\net462\Microsoft.Bcl.HashCode.dll</HintPath>
     </Reference>
+    <Reference Include="Newtonsoft.Json, Version=13.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed, processorArchitecture=MSIL">
+      <HintPath>packages\Newtonsoft.Json.13.0.4\lib\net45\Newtonsoft.Json.dll</HintPath>
+    </Reference>
     <Reference Include="PresentationCore" />
     <Reference Include="PresentationFramework" />
     <Reference Include="RevitAPI, Version=24.2.0.0, Culture=neutral, processorArchitecture=AMD64">
@@ -72,6 +75,7 @@
     <Reference Include="System.Runtime.CompilerServices.Unsafe, Version=6.0.3.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a, processorArchitecture=MSIL">
       <HintPath>packages\System.Runtime.CompilerServices.Unsafe.6.1.2\lib\net462\System.Runtime.CompilerServices.Unsafe.dll</HintPath>
     </Reference>
+    <Reference Include="System.Security" />
     <Reference Include="System.Threading.Tasks.Extensions, Version=4.2.4.0, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51, processorArchitecture=MSIL">
       <HintPath>packages\System.Threading.Tasks.Extensions.4.6.3\lib\net462\System.Threading.Tasks.Extensions.dll</HintPath>
     </Reference>
@@ -92,12 +96,27 @@
   <ItemGroup>
     <Compile Include="App.cs" />
     <Compile Include="Command\ABSDictionary.cs" />
+    <Compile Include="Command\AssignAbsHandler.cs" />
+    <Compile Include="Command\PramCheck.cs" />
     <Compile Include="Command\QualityCommand.cs" />
     <Compile Include="Extension\DataLab.cs" />
+    <Compile Include="IExternalEvents\DataExportEvents.cs" />
+    <Compile Include="MasterCommand.cs" />
+    <Compile Include="MCDataExport.cs" />
     <Compile Include="Model\MasterCommand.cs" />
+    <Compile Include="Model\UserRecord.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="Services\AuthService.cs" />
+    <Compile Include="Services\MachineHelper.cs" />
+    <Compile Include="Services\TokenService.cs" />
     <Compile Include="UI\ABSUI.xaml.cs">
       <DependentUpon>ABSUI.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="UI\DataExporter.xaml.cs">
+      <DependentUpon>DataExporter.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="UI\LoginWindow.xaml.cs">
+      <DependentUpon>LoginWindow.xaml</DependentUpon>
     </Compile>
     <Compile Include="UI\Quality.xaml.cs">
       <DependentUpon>Quality.xaml</DependentUpon>
@@ -105,6 +124,14 @@
   </ItemGroup>
   <ItemGroup>
     <Page Include="UI\ABSUI.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="UI\DataExporter.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="UI\LoginWindow.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>
@@ -117,6 +144,10 @@
     <None Include="app.config" />
     <None Include="packages.config" />
   </ItemGroup>
-  <ItemGroup />
+  <ItemGroup>
+    <EmbeddedResource Include="Resources\Icon32.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </EmbeddedResource>
+  </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

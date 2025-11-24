@@ -3,9 +3,14 @@ using Autodesk.Revit.DB.Architecture;
 using Autodesk.Revit.UI;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Text;
 using System.Windows;
 using System.Windows.Controls;
+using Microsoft.Win32;
+using CostAnalysis.Command;    // AssignAbsHandler
+using CostAnalysis.Extension;  // DataLab
 
 namespace CostAnalysis.UI
 {
@@ -13,15 +18,19 @@ namespace CostAnalysis.UI
     {
         UIDocument uidoc;
         Document doc;
-
-        // We’ll list both host and linked rooms via this wrapper
         private List<LinkedRoomItem> _allRooms = new List<LinkedRoomItem>();
+
+        private AssignAbsHandler _assignAbsHandler;
+        private ExternalEvent _assignAbsEvent;
 
         public ABSUI(Document doc, UIDocument uidoc)
         {
             InitializeComponent();
             this.doc = doc ?? throw new ArgumentNullException(nameof(doc));
             this.uidoc = uidoc ?? throw new ArgumentNullException(nameof(uidoc));
+
+            _assignAbsHandler = new AssignAbsHandler();
+            _assignAbsEvent = ExternalEvent.Create(_assignAbsHandler);
 
             DataContext = this;
 
@@ -46,8 +55,7 @@ namespace CostAnalysis.UI
                 if (roomSolidSource == null)
                 {
                     TaskDialog.Show("ABS",
-                        "Could not compute a 3D solid for the selected room.\n" +
-                        "Ensure the room is properly enclosed in its phase.");
+                        "Could not compute a 3D solid for the selected room.\nEnsure the room is properly enclosed in its phase.");
                     return;
                 }
 
@@ -91,24 +99,235 @@ namespace CostAnalysis.UI
             }
         }
 
+        // Btn_ABS: Validate room asset, check registry, and assign to elements inside room
         public void Btn_ABS(object sender, RoutedEventArgs e)
         {
             try
             {
-                // TODO: assign your ABS code to selected elements
-                // var code = AssetCodeText.Text;
+                // 1. Get selected room
+                var selRoom = RoomsList.SelectedItem as LinkedRoomItem;
+                if (selRoom == null)
+                {
+                    TaskDialog.Show("ABS", "Please select a room first.");
+                    return;
+                }
+
+                var room = selRoom.Room;
+                if (room == null)
+                {
+                    TaskDialog.Show("ABS", "Invalid room selected.");
+                    return;
+                }
+
+                // 2. Get room data
+                string roomNumber = room.Number ?? room.Name ?? "";
+                string roomLevel = room.Level?.Name ?? GetLevelName(room);
+
+                // 3. Get room's asset code from its parameter
+                string roomAssetCode = "";
+                try
+                {
+                    // Try different parameter name variations
+                    string[] paramNames = new[]
+                    {
+                        "ECD_ABS_L1_Asset",
+                        "(01)ECD_ABS_L1_Asset",
+                        "01)ECD_ABS_L1_Asset",
+                        "ECD_ABS_L1_WBS_Plot_Code",
+                        "(02)ECD_ABS_L1_WBS_Plot_Code"
+                    };
+
+                    foreach (var paramName in paramNames)
+                    {
+                        var rp = room.LookupParameter(paramName);
+                        if (rp != null && rp.HasValue)
+                        {
+                            if (rp.StorageType == StorageType.String)
+                            {
+                                roomAssetCode = rp.AsString() ?? "";
+                                if (!string.IsNullOrWhiteSpace(roomAssetCode)) break;
+                            }
+                            else if (rp.StorageType == StorageType.Integer)
+                            {
+                                roomAssetCode = rp.AsInteger().ToString();
+                                if (!string.IsNullOrWhiteSpace(roomAssetCode)) break;
+                            }
+                            else if (rp.StorageType == StorageType.Double)
+                            {
+                                roomAssetCode = rp.AsDouble().ToString();
+                                if (!string.IsNullOrWhiteSpace(roomAssetCode)) break;
+                            }
+                        }
+                    }
+                }
+                catch { }
+
+                // 4. Get typed asset code from textbox
+                string typedAssetCode = AssetCodeText?.Text?.Trim() ?? "";
+
+                // 5. Validate: Room asset code must match textbox
+                if (string.IsNullOrEmpty(roomAssetCode))
+                {
+                    TaskDialog.Show("ABS",
+                        $"Room '{roomNumber}' has no asset code assigned.\n\n" +
+                        "Please assign an asset code to the room first.");
+                    return;
+                }
+
+                if (string.IsNullOrEmpty(typedAssetCode))
+                {
+                    TaskDialog.Show("ABS", "Please enter an asset code in the textbox.");
+                    return;
+                }
+
+                if (!string.Equals(roomAssetCode, typedAssetCode, StringComparison.OrdinalIgnoreCase))
+                {
+                    TaskDialog.Show("ABS - Asset Mismatch",
+                        $"Asset code mismatch!\n\n" +
+                        $"Room asset code: {roomAssetCode}\n" +
+                        $"Typed asset code: {typedAssetCode}\n\n" +
+                        "These must match to proceed. Please check and correct.");
+                    return;
+                }
+
+                // 6. Load Asset Registry (optional - if you have an asset registry file)
+                var assetRegistry = LoadAssetRegistry();
+
+                // 7. Validate asset code against registry (if registry exists)
+                if (assetRegistry != null && assetRegistry.Count > 0)
+                {
+                    if (!assetRegistry.Contains(typedAssetCode))
+                    {
+                        var result = TaskDialog.Show("ABS - Registry Check",
+                            $"Warning: Asset code '{typedAssetCode}' is not found in the asset registry.\n\n" +
+                            "Do you want to proceed anyway?",
+                            TaskDialogCommonButtons.Yes | TaskDialogCommonButtons.No);
+
+                        if (result != TaskDialogResult.Yes)
+                            return;
+                    }
+                }
+
+                // 8. All validations passed - prepare handler
+                _assignAbsHandler.TargetRoomIds = new List<ElementId> { room.Id };
+                _assignAbsHandler.RoomNumber = roomNumber;
+                _assignAbsHandler.RoomLevelName = roomLevel;
+                _assignAbsHandler.RoomAssetCode = typedAssetCode;
+                _assignAbsHandler.AssetRegistry = assetRegistry;
+                _assignAbsHandler.SharedParameterFileNameHint = "ExpoCity_SharedParameters_for_ABS.txt";
+
+                // 9. Raise external event to process
+                _assignAbsEvent.Raise();
             }
             catch (Exception ex)
             {
-                TaskDialog.Show("ABS", $"ABS failed.\n\n{ex.Message}");
+                TaskDialog.Show("ABS Error", $"An error occurred:\n\n{ex.Message}");
             }
+        }
+
+        /// <summary>
+        /// Loads asset registry from a file or returns an empty set
+        /// Modify this method to load from your actual asset registry source
+        /// </summary>
+        private HashSet<string> LoadAssetRegistry()
+        {
+            var registry = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            try
+            {
+                // OPTION 1: Load from a CSV file
+                string registryPath = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+                    "AssetRegistry.csv");
+
+                if (File.Exists(registryPath))
+                {
+                    var lines = File.ReadAllLines(registryPath);
+                    foreach (var line in lines.Skip(1)) // Skip header
+                    {
+                        if (!string.IsNullOrWhiteSpace(line))
+                        {
+                            var parts = line.Split(',');
+                            if (parts.Length > 0)
+                            {
+                                var assetCode = parts[0].Trim().Trim('"');
+                                if (!string.IsNullOrEmpty(assetCode))
+                                    registry.Add(assetCode);
+                            }
+                        }
+                    }
+                }
+
+                // OPTION 2: Load from Revit project parameter or shared parameter
+                // You can query all unique asset codes from existing elements in the project
+                /*
+                var collector = new FilteredElementCollector(doc)
+                    .WhereElementIsNotElementType()
+                    .ToElements();
+                
+                foreach (var el in collector)
+                {
+                    var p = el.LookupParameter("ECD_ABS_L1_Asset");
+                    if (p != null && p.HasValue && p.StorageType == StorageType.String)
+                    {
+                        var code = p.AsString();
+                        if (!string.IsNullOrEmpty(code))
+                            registry.Add(code);
+                    }
+                }
+                */
+
+                // OPTION 3: Hardcode valid asset codes for testing
+                /*
+                registry.Add("ASSET_001");
+                registry.Add("ASSET_002");
+                registry.Add("EXPO_CITY_123");
+                */
+            }
+            catch (Exception ex)
+            {
+                TaskDialog.Show("Registry Load", $"Could not load asset registry:\n{ex.Message}\n\nProceeding without registry validation.");
+            }
+
+            return registry;
         }
 
         public void Btn_Export(object sender, RoutedEventArgs e)
         {
             try
             {
-                // TODO: export your data
+                var selRoom = RoomsList.SelectedItem as LinkedRoomItem;
+                if (selRoom == null)
+                {
+                    TaskDialog.Show("Export", "Select a room first.");
+                    return;
+                }
+
+                var records = BuildRecordsForRoom(selRoom);
+                if (records == null || records.Count == 0)
+                {
+                    TaskDialog.Show("Export", "No elements to export for this room.");
+                    return;
+                }
+
+                var sfd = new SaveFileDialog
+                {
+                    Title = "Export elements to CSV",
+                    Filter = "CSV files (*.csv)|*.csv|All files (*.*)|*.*",
+                    FileName = $"Room_{selRoom.Number}_{selRoom.SourceTag}.csv"
+                };
+
+                bool? result = sfd.ShowDialog();
+                if (result != true) return;
+
+                using (var sw = new StreamWriter(sfd.FileName, false, Encoding.UTF8))
+                {
+                    sw.WriteLine(ElementRecord.CsvHeader());
+                    foreach (var r in records)
+                        sw.WriteLine(r.ToCsvLine());
+                }
+
+                TaskDialog.Show("Export", $"Exported {records.Count} records to:\n{sfd.FileName}");
             }
             catch (Exception ex)
             {
@@ -148,10 +367,7 @@ namespace CostAnalysis.UI
                 .Where(r => r != null && r.Location != null)
                 .ToList();
 
-            foreach (var r in hostRooms)
-            {
-                items.Add(LinkedRoomItem.FromHost(r, doc));
-            }
+            foreach (var r in hostRooms) items.Add(LinkedRoomItem.FromHost(r, doc));
 
             // Linked rooms
             var linkInstances = new FilteredElementCollector(doc)
@@ -175,35 +391,27 @@ namespace CostAnalysis.UI
                     .ToList();
 
                 foreach (var r in linkRooms)
-                {
                     items.Add(LinkedRoomItem.FromLink(r, linkDoc, linkToHost, linkInst.Name));
-                }
             }
 
             _allRooms = items
-                .OrderBy(i => i.IsFromLink)            // host first
-                .ThenBy(i => i.SourceTag)              // group by source
+                .OrderBy(i => i.IsFromLink)
+                .ThenBy(i => i.SourceTag)
                 .ThenBy(i => i.Number)
                 .ThenBy(i => i.Name)
                 .ToList();
 
             RoomsList.ItemsSource = _allRooms;
-
-            // Show a friendly label in the ListBox
             RoomsList.DisplayMemberPath = nameof(LinkedRoomItem.DisplayText);
         }
 
         private void BuildCategoryTree()
         {
-            // Fill if/when you hook up the right-side tree
+            // optional: populate the CategoriesTree if desired
         }
 
         // ------ Geometry -----------------------------------------------------------
 
-        /// <summary>
-        /// Build a 3D solid from the room's boundary loops by extruding upward.
-        /// Works for both host and linked rooms (we transform later for linked).
-        /// </summary>
         private Solid GetRoomSolidFromBoundaries(Room room)
         {
             if (room == null) return null;
@@ -225,7 +433,6 @@ namespace CostAnalysis.UI
 
             if (loops == null || loops.Count == 0) return null;
 
-            // Height: prefer UnboundedHeight; fallback to ~3m in feet
             double height = room.UnboundedHeight;
             if (height <= 1e-6 || double.IsNaN(height))
             {
@@ -252,19 +459,199 @@ namespace CostAnalysis.UI
                 var extruded = GeometryCreationUtilities.CreateExtrusionGeometry(curveLoops, XYZ.BasisZ, height);
                 if (extruded != null && extruded.Volume > 1e-9) return extruded;
             }
-            catch
-            {
-                // ignore
-            }
+            catch { }
 
             return null;
         }
+
+        // -------------------- Element record helpers used for export ------------------
+
+        internal class ElementRecord
+        {
+            public int Id { get; set; }
+            public string Category { get; set; }
+            public string Name { get; set; }
+            public string TypeName { get; set; }
+            public string Level { get; set; }
+            public double Volume { get; set; }        // Revit internal units
+            public double Area { get; set; }          // Revit internal units
+            public string ABSCode { get; set; }       // stored ABS code (if any)
+            public string Source { get; set; }        // Host or Link name
+
+            public string ToCsvLine()
+            {
+                string Esc(string s) => s?.Replace("\"", "\"\"") ?? "";
+                return $"\"{Id}\",\"{Esc(Category)}\",\"{Esc(Name)}\",\"{Esc(TypeName)}\",\"{Esc(Level)}\",\"{Volume}\",\"{Area}\",\"{Esc(ABSCode)}\",\"{Esc(Source)}\"";
+            }
+
+            public static string CsvHeader()
+            {
+                return "\"ElementId\",\"Category\",\"Name\",\"TypeName\",\"Level\",\"Volume\",\"Area\",\"ABSCode\",\"Source\"";
+            }
+        }
+
+        private List<ElementRecord> BuildRecordsForRoom(LinkedRoomItem sel)
+        {
+            var records = new List<ElementRecord>();
+            if (sel == null) return records;
+
+            var roomSolidSource = GetRoomSolidFromBoundaries(sel.Room);
+            if (roomSolidSource == null) return records;
+
+            Solid hostSolid = roomSolidSource;
+            if (sel.LinkToHost != null && !sel.LinkToHost.IsIdentity)
+                hostSolid = SolidUtils.CreateTransformed(roomSolidSource, sel.LinkToHost);
+
+            var intersectsFilter = new ElementIntersectsSolidFilter(hostSolid);
+
+            var elems = new FilteredElementCollector(doc)
+                        .WhereElementIsNotElementType()
+                        .WherePasses(intersectsFilter)
+                        .Where(e2 => e2.Category != null && e2.Category.CategoryType == CategoryType.Model)
+                        .ToList();
+
+            foreach (var el in elems)
+            {
+                try
+                {
+                    records.Add(new ElementRecord
+                    {
+                        Id = el.Id.IntegerValue,
+                        Category = el.Category?.Name,
+                        Name = el.Name,
+                        TypeName = GetTypeName(el),
+                        Level = GetLevelName(el),
+                        Volume = GetElementVolume(el, doc),
+                        Area = GetElementArea(el),
+                        ABSCode = GetStringParameter(el, DataLab.AbsParamNames.FirstOrDefault() ?? "ECD_ABS_L1_Asset"),
+                        Source = sel.IsFromLink ? sel.LinkInstanceName : "Host"
+                    });
+                }
+                catch { }
+            }
+
+            return records;
+        }
+
+        private string GetTypeName(Element e)
+        {
+            try
+            {
+                ElementId typeId = e.GetTypeId();
+                if (typeId != null && typeId.IntegerValue != -1)
+                {
+                    var t = doc.GetElement(typeId);
+                    if (t != null) return t.Name;
+                }
+            }
+            catch { }
+            return "";
+        }
+
+        private string GetLevelName(Element e)
+        {
+            try
+            {
+                var p = e.get_Parameter(BuiltInParameter.LEVEL_PARAM);
+                if (p != null && p.HasValue)
+                {
+                    var id = p.AsElementId();
+                    if (id != null && id?.IntegerValue != -1)
+                    {
+                        var level = doc.GetElement(id) as Level;
+                        if (level != null) return level.Name;
+                    }
+                }
+
+                var lid = e.LevelId;
+                if (lid != null && lid?.IntegerValue != -1)
+                {
+                    var level = doc.GetElement(lid) as Level;
+                    if (level != null) return level.Name;
+                }
+            }
+            catch { }
+
+            return "";
+        }
+
+        private double GetElementArea(Element e)
+        {
+            try
+            {
+                var p = e.LookupParameter("Area") ?? e.get_Parameter(BuiltInParameter.HOST_AREA_COMPUTED);
+                if (p != null && p.StorageType == StorageType.Double && p.HasValue)
+                    return p.AsDouble();
+            }
+            catch { }
+            return 0.0;
+        }
+
+        private static double GetElementVolume(Element e, Document doc)
+        {
+            try
+            {
+                var p = e.LookupParameter("Volume") ?? e.get_Parameter(BuiltInParameter.HOST_VOLUME_COMPUTED);
+                if (p != null && p.HasValue && p.StorageType == StorageType.Double)
+                {
+                    return p.AsDouble();
+                }
+            }
+            catch { }
+
+            try
+            {
+                double sumVol = 0.0;
+                var options = new Options { ComputeReferences = false, DetailLevel = ViewDetailLevel.Fine };
+                var geomElem = e.get_Geometry(options);
+                if (geomElem != null)
+                {
+                    foreach (GeometryObject gObj in geomElem)
+                    {
+                        if (gObj is Solid s && s.Volume > 0)
+                        {
+                            sumVol += s.Volume;
+                        }
+                        else if (gObj is GeometryInstance gi)
+                        {
+                            var instGeom = gi.GetInstanceGeometry();
+                            foreach (GeometryObject instObj in instGeom)
+                            {
+                                if (instObj is Solid s2 && s2.Volume > 0) sumVol += s2.Volume;
+                            }
+                        }
+                    }
+                }
+
+                return sumVol;
+            }
+            catch
+            {
+                return 0.0;
+            }
+        }
+
+        private string GetStringParameter(Element el, string paramName)
+        {
+            try
+            {
+                var p = el.LookupParameter(paramName);
+                if (p != null && p.HasValue)
+                {
+                    switch (p.StorageType)
+                    {
+                        case StorageType.String: return p.AsString();
+                        case StorageType.Double: return p.AsDouble().ToString();
+                        case StorageType.Integer: return p.AsInteger().ToString();
+                        default: return "";
+                    }
+                }
+            }
+            catch { }
+            return "";
+        }
     }
 
-    /// <summary>
-    /// Wrapper to represent a room that may live in host or a linked document.
-    /// Provides the transform from the room's doc into the host doc.
-    /// </summary>
     internal class LinkedRoomItem
     {
         public Room Room { get; private set; }
@@ -276,37 +663,20 @@ namespace CostAnalysis.UI
         public string Number => Room?.Number;
         public string Name => Room?.Name;
 
-        public string SourceTag => IsFromLink
-            ? (string.IsNullOrEmpty(LinkInstanceName) ? "Link" : LinkInstanceName)
-            : "Host";
+        public string SourceTag => IsFromLink ? (string.IsNullOrEmpty(LinkInstanceName) ? "Link" : LinkInstanceName) : "Host";
 
-        public string DisplayText
-            => $"{Number} - {Name}  [{SourceTag}]";
+        public string DisplayText => $"{Number} - {Name}  [{SourceTag}]";
 
         private LinkedRoomItem() { }
 
         public static LinkedRoomItem FromHost(Room room, Document hostDoc)
         {
-            return new LinkedRoomItem
-            {
-                Room = room,
-                SourceDoc = hostDoc,
-                LinkToHost = Transform.Identity,
-                IsFromLink = false,
-                LinkInstanceName = "Host"
-            };
+            return new LinkedRoomItem { Room = room, SourceDoc = hostDoc, LinkToHost = Transform.Identity, IsFromLink = false, LinkInstanceName = "Host" };
         }
 
         public static LinkedRoomItem FromLink(Room room, Document linkDoc, Transform linkToHost, string linkName)
         {
-            return new LinkedRoomItem
-            {
-                Room = room,
-                SourceDoc = linkDoc,
-                LinkToHost = linkToHost ?? Transform.Identity,
-                IsFromLink = true,
-                LinkInstanceName = linkName
-            };
+            return new LinkedRoomItem { Room = room, SourceDoc = linkDoc, LinkToHost = linkToHost ?? Transform.Identity, IsFromLink = true, LinkInstanceName = linkName };
         }
 
         public override string ToString() => DisplayText;
