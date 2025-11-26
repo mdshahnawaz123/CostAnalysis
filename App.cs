@@ -19,10 +19,6 @@ namespace CostAnalysis
 
         public Result OnStartup(UIControlledApplication application)
         {
-            // Use uploaded path (will be transformed if you replace it with the raw URL)
-
-
-            // production example:
             var source = "https://raw.githubusercontent.com/mdshahnawaz123/plugin-access-control/main/users.json";
 
             try
