@@ -17,8 +17,8 @@ namespace CostAnalysis.Command
         {
             var uidoc = commandData.Application.ActiveUIDocument;
             var doc = uidoc.Document;
-            var frm = new UI.Quality(doc, uidoc);
-            frm.ShowDialog();
+            var frm = new UI.DataExporter(doc, uidoc);
+            frm.Show();
             return Result.Succeeded;
         }
     }

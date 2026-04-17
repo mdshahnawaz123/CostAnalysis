@@ -72,7 +72,7 @@ namespace CostAnalysis.Extension
                                     .Select(e => e.Category)
                                     .Where(c => c != null)
                                     .Where(c => c.CategoryType == CategoryType.Model)  // only model categories
-                                    .GroupBy(c => c.Id.IntegerValue)
+                                    .GroupBy(c => c.Id.Value)
                                     .Select(g => g.First())
                                     .OrderBy(c => c.Name)
                                     .ToList();

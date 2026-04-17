@@ -57,7 +57,7 @@ namespace CostAnalysis.UI
 
         private static BuiltInCategory? TryGetBic(Category cat)
         {
-            try { return (BuiltInCategory)cat?.Id.IntegerValue; }
+            try { return (BuiltInCategory)cat?.Id.Value; }
             catch { return null; }
         }
 
@@ -65,7 +65,7 @@ namespace CostAnalysis.UI
         {
             try
             {
-                var bic = (BuiltInCategory)cat?.Id.IntegerValue;
+                var bic = (BuiltInCategory)cat?.Id.Value;
                 return new FilteredElementCollector(doc)
                         .OfCategory(bic)
                         .WhereElementIsNotElementType()

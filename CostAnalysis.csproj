@@ -95,8 +95,6 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="App.cs" />
-    <Compile Include="Command\ABSDictionary.cs" />
-    <Compile Include="Command\AssignAbsHandler.cs" />
     <Compile Include="Command\PramCheck.cs" />
     <Compile Include="Command\QualityCommand.cs" />
     <Compile Include="Extension\DataLab.cs" />
@@ -109,9 +107,6 @@
     <Compile Include="Services\AuthService.cs" />
     <Compile Include="Services\MachineHelper.cs" />
     <Compile Include="Services\TokenService.cs" />
-    <Compile Include="UI\ABSUI.xaml.cs">
-      <DependentUpon>ABSUI.xaml</DependentUpon>
-    </Compile>
     <Compile Include="UI\DataExporter.xaml.cs">
       <DependentUpon>DataExporter.xaml</DependentUpon>
     </Compile>
@@ -123,10 +118,6 @@
     </Compile>
   </ItemGroup>
   <ItemGroup>
-    <Page Include="UI\ABSUI.xaml">
-      <SubType>Designer</SubType>
-      <Generator>MSBuild:Compile</Generator>
-    </Page>
     <Page Include="UI\DataExporter.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>

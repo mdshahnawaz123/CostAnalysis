@@ -1,8 +1,9 @@
-﻿using Autodesk.Revit.UI;
+using Autodesk.Revit.UI;
 using CostAnalysis.Services;
 using System;
 using System.IO;
 using System.Reflection;
+using System.Windows;
 
 namespace CostAnalysis
 {
@@ -28,14 +29,7 @@ namespace CostAnalysis
             }
             catch
             {
-                try
-                {
-                    var folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CostAnalysis");
-                    Directory.CreateDirectory(folder);
-                    var file = Path.Combine(folder, "startup_auth.log");
-                    File.AppendAllText(file, DateTime.UtcNow.ToString("s") + " AuthService init failed." + Environment.NewLine);
-                }
-                catch { }
+                // ... log error
             }
 
             try
@@ -43,56 +37,51 @@ namespace CostAnalysis
                 RibbonPanel panel = FindExistingPanel(application, PanelName);
                 if (panel == null)
                 {
-                    try
+                    if (!TabExists(application, TargetTabName))
                     {
-                        if (!TabExists(application, TargetTabName))
-                        {
-                            try { application.CreateRibbonTab(TargetTabName); }
-                            catch { }
-                        }
-                        panel = application.CreateRibbonPanel(TargetTabName, PanelName);
+                        try { application.CreateRibbonTab(TargetTabName); }
+                        catch { }
                     }
-                    catch
-                    {
-                        panel = application.CreateRibbonPanel(PanelName);
-                    }
+                    panel = application.CreateRibbonPanel(TargetTabName, PanelName);
                 }
 
-                if (!PanelHasButton(panel, ButtonInternalName))
-                {
-                    var pushData = new PushButtonData(ButtonInternalName, ButtonText, AssemblyPath, commandClass)
-                    {
-                        ToolTip = ButtonTooltip
-                    };
+                // Add Data Exporter Button
+                AddPushButton(panel, "QC_Analysis_DataExporter", "Data Exporter", "CostAnalysis.Command.PramCheck", "Open Data Exporter (BOQ & QA-QC)");
 
-                    var item = panel.AddItem(pushData);
-                    var push = item as PushButton;
-
-                    try
-                    {
-                        var large = LoadImageFromResource("Resources/Icon32.png");
-                        if (large != null && push != null) push.LargeImage = large;
-                        var small = LoadImageFromResource("Resources/Icon16.png");
-                        if (small != null && push != null) push.Image = small;
-                    }
-                    catch { }
-                }
+                // Add Quality Check Button
+                AddPushButton(panel, "QC_Analysis_Quality", "Quality Check", "CostAnalysis.Command.QualityCommand", "Open Parameter Quality Check tool");
 
                 return Result.Succeeded;
             }
             catch (Exception ex)
             {
-                try
-                {
-                    var folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CostAnalysis");
-                    Directory.CreateDirectory(folder);
-                    var file = Path.Combine(folder, "startup.log");
-                    File.AppendAllText(file, DateTime.UtcNow.ToString("s") + " OnStartup exception: " + ex + Environment.NewLine);
-                }
-                catch { }
+                // ... log error
+                ex.Message.ToString();
                 return Result.Succeeded;
             }
         }
+
+        private void AddPushButton(RibbonPanel panel, string internalName, string text, string className, string tooltip)
+        {
+            if (PanelHasButton(panel, internalName)) return;
+
+            var pushData = new PushButtonData(internalName, text, AssemblyPath, className)
+            {
+                ToolTip = tooltip
+            };
+
+            var item = panel.AddItem(pushData) as PushButton;
+            if (item != null)
+            {
+                try
+                {
+                    item.LargeImage = LoadImageFromResource("Resources/Icon32.png");
+                    item.Image = LoadImageFromResource("Resources/Icon16.png");
+                }
+                catch { }
+            }
+        }
+        
 
         public Result OnShutdown(UIControlledApplication application)
         {

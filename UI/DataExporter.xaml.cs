@@ -1,4 +1,4 @@
-﻿// users.json dev reference (uploaded file path):
+// users.json dev reference (uploaded file path):
 // /mnt/data/b6955248-e5d2-4f87-bf5b-499886feb251.png
 //
 // Paste this file as UI/DataExporter.xaml.cs
@@ -7,6 +7,7 @@ using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using Microsoft.Win32;
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
@@ -23,6 +24,9 @@ namespace CostAnalysis.UI
 {
     public partial class DataExporter : Window, INotifyPropertyChanged
     {
+        private ExternalEvent _externalEvent;
+        private CostAnalysis.IExternalEvents.DataExportEvents _eventHandler;
+
         public ObservableCollection<TypeEntry> TypeEntries { get; set; } = new ObservableCollection<TypeEntry>();
         // verbose info (not bound to the LB for export) - useful for debugging or tooltip
         public ObservableCollection<string> ParameterInfo { get; set; } = new ObservableCollection<string>();
@@ -58,6 +62,11 @@ namespace CostAnalysis.UI
 
             DataContext = this;
 
+            // Initialize external event for context-safe modifications
+            _eventHandler = new CostAnalysis.IExternalEvents.DataExportEvents();
+            _eventHandler.ProgressUpdater = UpdateProgress;
+            _externalEvent = ExternalEvent.Create(_eventHandler);
+
             // use an ICollectionView for stable filtering
             _typesView = CollectionViewSource.GetDefaultView(TypeEntries);
             _typesView.Filter = TypesFilter;
@@ -90,11 +99,40 @@ namespace CostAnalysis.UI
 
         #region UI Handlers
 
+        public void UpdateProgress(int current, int total, string message)
+        {
+            System.Windows.Application.Current.Dispatcher.Invoke(
+                System.Windows.Threading.DispatcherPriority.Background,
+                new Action(() =>
+                {
+                    if (current < total && total > 0)
+                    {
+                        PB_Progress.Visibility = System.Windows.Visibility.Visible;
+                        TXT_Progress.Visibility = System.Windows.Visibility.Visible;
+                        PB_Progress.Maximum = total;
+                        PB_Progress.Value = current;
+                        TXT_Progress.Text = message;
+                    }
+                    else
+                    {
+                        PB_Progress.Visibility = System.Windows.Visibility.Hidden;
+                        TXT_Progress.Visibility = System.Windows.Visibility.Hidden;
+                    }
+                }));
+        }
+
         private void LV_ModelCat_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
         {
-            var sel = LV_ModelCat.SelectedItem as Category;
-            if (sel == null) return;
-            BuildTypesForCategory(sel);
+            var selectedCates = LV_ModelCat.SelectedItems.Cast<Category>().ToList();
+            if (!selectedCates.Any())
+            {
+                TypeEntries.Clear();
+                ParameterNames.Clear();
+                ParameterInfo.Clear();
+                GeometryPreview.Clear();
+                return;
+            }
+            BuildTypesForCategories(selectedCates);
         }
 
         private void DG_Types_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
@@ -142,14 +180,21 @@ namespace CostAnalysis.UI
         {
             try
             {
-                var selcat = LV_ModelCat.SelectedItem as Category;
-                if (selcat == null)
+                var selcats = LV_ModelCat.SelectedItems.Cast<Category>().ToList();
+                if (!selcats.Any())
                 {
-                    MessageBox.Show("Select a model category first.", "No Category", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    MessageBox.Show("Select at least one model category first.", "No Category", MessageBoxButton.OK, MessageBoxImage.Warning);
                     return;
                 }
 
-                var ids = new FilteredElementCollector(doc).OfCategoryId(selcat.Id).WhereElementIsNotElementType().ToElementIds();
+                var ids = new List<ElementId>();
+                foreach (var cat in selcats)
+                {
+                    ids.AddRange(new FilteredElementCollector(doc).OfCategoryId(cat.Id).WhereElementIsNotElementType().ToElementIds());
+                }
+
+                if (!ids.Any()) return;
+
                 uidoc.Selection.SetElementIds(ids);
                 uidoc.ShowElements(ids);
                 if (doc.ActiveView.ViewType == ViewType.ThreeD || doc.ActiveView.ViewType == ViewType.FloorPlan)
@@ -170,32 +215,37 @@ namespace CostAnalysis.UI
 
         #region Build lists
 
-        private void BuildTypesForCategory(Category selcat)
+        private void BuildTypesForCategories(List<Category> selCats)
         {
             TypeEntries.Clear();
             ParameterNames.Clear();
             ParameterInfo.Clear();
             GeometryPreview.Clear();
 
-            var elems = new FilteredElementCollector(doc)
-                .OfCategoryId(selcat.Id)
-                .WhereElementIsNotElementType()
-                .Where(e => e != null)
-                .ToList();
+            var combinedElems = new List<Element>();
+            foreach (var cat in selCats)
+            {
+                var elems = new FilteredElementCollector(doc)
+                    .OfCategoryId(cat.Id)
+                    .WhereElementIsNotElementType()
+                    .Where(e => e != null)
+                    .ToList();
+                combinedElems.AddRange(elems);
+            }
 
-            var groups = elems.GroupBy(x => x.GetTypeId())
+            var groups = combinedElems.GroupBy(x => x.GetTypeId())
                               .Select(g =>
                               {
                                   var typeId = g.Key;
                                   var typeElem = doc.GetElement(typeId);
-                                  string name = typeElem != null ? (typeElem.Name ?? typeElem.GetType().Name) : $"Type {typeId.IntegerValue}";
+                                  string name = typeElem != null ? (typeElem.Name ?? typeElem.GetType().Name) : $"Type {typeId.Value}";
 
                                   var instances = new ObservableCollection<InstanceEntry>();
                                   foreach (var el in g)
                                   {
                                       instances.Add(new InstanceEntry
                                       {
-                                          Id = el.Id.IntegerValue.ToString(),
+                                          Id = el.Id.Value.ToString(),
                                           Name = TryGetElementName(el),
                                           Level = TryGetLevelName(el),
                                           InfoSummary = BuildInstanceInfoSummary(el),
@@ -304,7 +354,7 @@ namespace CostAnalysis.UI
                     case StorageType.String: return param.AsString() ?? "";
                     case StorageType.Double: return param.AsDouble().ToString(CultureInfo.InvariantCulture);
                     case StorageType.Integer: return param.AsInteger().ToString();
-                    case StorageType.ElementId: return param.AsElementId()?.IntegerValue.ToString() ?? "";
+                    case StorageType.ElementId: return param.AsElementId()?.Value.ToString() ?? "";
                     default: return "";
                 }
             }
@@ -380,6 +430,58 @@ namespace CostAnalysis.UI
             catch { return ""; }
         }
 
+        private string GetRoomName(Element el, Document targetDoc)
+        {
+            if (el == null) return "";
+            try
+            {
+                // 1. Doors and Windows (Transition logic)
+                if (el is FamilyInstance fi)
+                {
+                    var catId = fi.Category?.Id.Value ?? 0;
+                    if (catId == (int)BuiltInCategory.OST_Doors || catId == (int)BuiltInCategory.OST_Windows)
+                    {
+                        if (fi.FromRoom != null || fi.ToRoom != null)
+                        {
+                            string from = fi.FromRoom?.Name ?? "External/None";
+                            string to = fi.ToRoom?.Name ?? "External/None";
+                            return $"{from} to {to}";
+                        }
+                    }
+                    
+                    // 2. Family Instances with spatial Room property
+                    if (fi.Room != null) return fi.Room.Name;
+                }
+
+                // 3. Spatial calculation for elements with physical location (Furniture, Equipment, etc.)
+                var phaseId = el.get_Parameter(BuiltInParameter.PHASE_CREATED)?.AsElementId();
+                Phase phase = (phaseId != null && phaseId != ElementId.InvalidElementId) ? targetDoc.GetElement(phaseId) as Phase : null;
+                if (phase == null) phase = targetDoc.Phases.Cast<Phase>().LastOrDefault(); // Fallback to last phase
+
+                if (phase != null)
+                {
+                    Location loc = el.Location;
+                    if (loc is LocationPoint lp)
+                    {
+                        var rm = targetDoc.GetRoomAtPoint(lp.Point, phase);
+                        if (rm != null) return rm.Name;
+                    }
+                    else if (loc is LocationCurve lc)
+                    {
+                        XYZ mid = lc.Curve.Evaluate(0.5, true);
+                        var rm = targetDoc.GetRoomAtPoint(mid, phase);
+                        if (rm != null) return rm.Name;
+                    }
+                }
+
+                // 4. Fallback to parameters
+                var p = el.get_Parameter(BuiltInParameter.ROOM_NAME) ?? el.get_Parameter(BuiltInParameter.ELEM_ROOM_NAME);
+                if (p != null && !string.IsNullOrEmpty(p.AsString())) return p.AsString();
+            }
+            catch { }
+            return "No Room";
+        }
+
         private string EscapeCsv(string s)
         {
             if (s == null) return "";
@@ -415,13 +517,6 @@ namespace CostAnalysis.UI
                     int.TryParse(ci.Content.ToString(), out decimals);
                 }
 
-                var selCat = LV_ModelCat.SelectedItem as Category;
-                if (selCat == null)
-                {
-                    MessageBox.Show("Please select a Model Category (left panel) before exporting.", "No Category", MessageBoxButton.OK, MessageBoxImage.Warning);
-                    return;
-                }
-
                 var saveDlg = new SaveFileDialog
                 {
                     Filter = "CSV file (*.csv)|*.csv",
@@ -438,6 +533,9 @@ namespace CostAnalysis.UI
                     {
                         var itemizeTypes = selectedTypes.Where(t => itemizeAll || t.ExportInstances).ToList();
                         var aggregateTypes = selectedTypes.Except(itemizeTypes).ToList();
+                        
+                        int totalSteps = aggregateTypes.Count + selectedTypes.Where(t => itemizeAll || t.ExportInstances).Sum(t => t.Instances.Count);
+                        int currentStep = 0;
 
                         if (aggregateTypes.Any())
                         {
@@ -451,13 +549,18 @@ namespace CostAnalysis.UI
 
                             foreach (var te in aggregateTypes)
                             {
+                                currentStep++;
+                                UpdateProgress(currentStep, totalSteps, $"Exporting aggregated type {currentStep} of {totalSteps}");
+
+                                // Get elements from all selected categories that match this type
                                 var elems = new FilteredElementCollector(doc)
-                                    .OfCategoryId(selCat.Id)
                                     .WhereElementIsNotElementType()
                                     .Where(x => x.GetTypeId() == te.TypeId)
                                     .ToList();
 
                                 if (!elems.Any()) continue;
+
+                                string catName = elems.First().Category?.Name ?? "Unknown";
 
                                 if (breakdownByLevel)
                                 {
@@ -476,7 +579,7 @@ namespace CostAnalysis.UI
                                             if (vp != null && vp.StorageType == StorageType.Double) sumVol += UnitUtils.ConvertFromInternalUnits(vp.AsDouble(), UnitTypeId.CubicMeters);
                                         }
 
-                                        var row = new System.Collections.Generic.List<string> { selCat?.Name ?? "", te.Name, te.TypeId.IntegerValue.ToString(), g.Key };
+                                        var row = new System.Collections.Generic.List<string> { catName, te.Name, te.TypeId.Value.ToString(), g.Key };
                                         if (includeCount) row.Add(qty.ToString());
                                         if (includeLength) row.Add(sumLen.ToString($"F{decimals}", CultureInfo.InvariantCulture));
                                         if (includeArea) row.Add(sumArea.ToString($"F{decimals}", CultureInfo.InvariantCulture));
@@ -498,7 +601,7 @@ namespace CostAnalysis.UI
                                         if (vp != null && vp.StorageType == StorageType.Double) sumVol += UnitUtils.ConvertFromInternalUnits(vp.AsDouble(), UnitTypeId.CubicMeters);
                                     }
 
-                                    var row = new System.Collections.Generic.List<string> { selCat?.Name ?? "", te.Name, te.TypeId.IntegerValue.ToString() };
+                                    var row = new System.Collections.Generic.List<string> { catName, te.Name, te.TypeId.Value.ToString() };
                                     if (includeCount) row.Add(qty.ToString());
                                     if (includeLength) row.Add(sumLen.ToString($"F{decimals}", CultureInfo.InvariantCulture));
                                     if (includeArea) row.Add(sumArea.ToString($"F{decimals}", CultureInfo.InvariantCulture));
@@ -511,7 +614,7 @@ namespace CostAnalysis.UI
                         if (selectedTypes.Any(t => itemizeAll || t.ExportInstances))
                         {
                             sw.WriteLine();
-                            var hdr = new System.Collections.Generic.List<string> { "Category", "TypeName", "ElementId", "UniqueId", "Name", "Level", "Length_m", "Area_m2", "Volume_m3", "InfoSummary" };
+                            var hdr = new System.Collections.Generic.List<string> { "Category", "TypeName", "ElementId", "UniqueId", "Name", "Level", "Room", "Length_m", "Area_m2", "Volume_m3", "InfoSummary" };
                             sw.WriteLine(string.Join(",", hdr.Select(EscapeCsv)));
 
                             var itemTypes = selectedTypes.Where(t => itemizeAll || t.ExportInstances);
@@ -519,6 +622,10 @@ namespace CostAnalysis.UI
                             {
                                 foreach (var inst in te.Instances)
                                 {
+                                    currentStep++;
+                                    if (currentStep % 10 == 0 || currentStep == totalSteps)
+                                        UpdateProgress(currentStep, totalSteps, $"Exporting instance {currentStep} of {totalSteps}");
+
                                     var el = inst.ElementRef;
                                     double len = 0, area = 0, vol = 0;
                                     var lp = el?.get_Parameter(BuiltInParameter.CURVE_ELEM_LENGTH);
@@ -528,14 +635,17 @@ namespace CostAnalysis.UI
                                     var vp = el?.get_Parameter(BuiltInParameter.HOST_VOLUME_COMPUTED);
                                     if (vp != null && vp.StorageType == StorageType.Double) vol = UnitUtils.ConvertFromInternalUnits(vp.AsDouble(), UnitTypeId.CubicMeters);
 
+                                    string room = GetRoomName(el, doc);
+
                                     var row = new System.Collections.Generic.List<string>
                                     {
-                                        selCat?.Name ?? "",
+                                        el?.Category?.Name ?? "Unknown",
                                         te.Name,
                                         inst.Id,
                                         el?.UniqueId ?? "",
                                         inst.Name,
                                         inst.Level,
+                                        room,
                                         (len>0?len.ToString($"F{decimals}", CultureInfo.InvariantCulture):""),
                                         (area>0?area.ToString($"F{decimals}", CultureInfo.InvariantCulture):""),
                                         (vol>0?vol.ToString($"F{decimals}", CultureInfo.InvariantCulture):""),
@@ -562,7 +672,10 @@ namespace CostAnalysis.UI
                             return;
                         }
 
-                        var header = new System.Collections.Generic.List<string> { "Category", "TypeName", "ElementId", "UniqueId", "Name", "Level" };
+                        int totalSteps = qaTypes.Sum(t => t.Instances.Count);
+                        int currentStep = 0;
+
+                        var header = new System.Collections.Generic.List<string> { "Category", "TypeName", "ElementId", "UniqueId", "Name", "Level", "Room" };
                         header.AddRange(selectedParams);
                         sw.WriteLine(string.Join(",", header.Select(EscapeCsv)));
 
@@ -570,15 +683,22 @@ namespace CostAnalysis.UI
                         {
                             foreach (var inst in te.Instances)
                             {
+                                currentStep++;
+                                if (currentStep % 5 == 0 || currentStep == totalSteps)
+                                    UpdateProgress(currentStep, totalSteps, $"Exporting QA-QC {currentStep} of {totalSteps}");
+
                                 var el = inst.ElementRef;
+                                string room = GetRoomName(el, doc);
+
                                 var row = new System.Collections.Generic.List<string>
                                 {
-                                    selCat?.Name ?? "",
+                                    el?.Category?.Name ?? "Unknown",
                                     te.Name,
                                     inst.Id,
                                     el?.UniqueId ?? "",
                                     inst.Name,
-                                    inst.Level
+                                    inst.Level,
+                                    room
                                 };
 
                                 foreach (var pName in selectedParams)
@@ -597,13 +717,40 @@ namespace CostAnalysis.UI
                             }
                         }
                     }
-                }
 
-                MessageBox.Show($"Export completed:\n{filePath}", "Export OK", MessageBoxButton.OK, MessageBoxImage.Information);
+                    MessageBox.Show($"Export completed:\n{filePath}", "Export OK", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
             }
             catch (Exception ex)
             {
                 MessageBox.Show("Export failed: " + ex.Message + "\n\nPlease contact support: mohammad.shahnawaz@expocitydubai.ae", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally
+            {
+                UpdateProgress(1, 1, "Ready");
+            }
+        }
+
+        public void Import_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var openDlg = new OpenFileDialog
+                {
+                    Filter = "CSV file (*.csv)|*.csv",
+                    Title = "Select CSV file to import"
+                };
+
+                if (openDlg.ShowDialog() == true)
+                {
+                    _eventHandler.FilePath = openDlg.FileName;
+                    _eventHandler.IsImport = true;
+                    _externalEvent.Raise();
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Import trigger failed: " + ex.Message, "Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
