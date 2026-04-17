@@ -101,24 +101,24 @@ namespace CostAnalysis.UI
 
         public void UpdateProgress(int current, int total, string message)
         {
+            if (current < total && total > 0)
+            {
+                PB_Progress.Visibility = Visibility.Visible;
+                TXT_Progress.Visibility = Visibility.Visible;
+                PB_Progress.Maximum = total;
+                PB_Progress.Value = current;
+                TXT_Progress.Text = message;
+            }
+            else
+            {
+                PB_Progress.Visibility = Visibility.Hidden;
+                TXT_Progress.Visibility = Visibility.Hidden;
+            }
+
+            // Force layout and render updates
             System.Windows.Application.Current.Dispatcher.Invoke(
-                System.Windows.Threading.DispatcherPriority.Background,
-                new Action(() =>
-                {
-                    if (current < total && total > 0)
-                    {
-                        PB_Progress.Visibility = System.Windows.Visibility.Visible;
-                        TXT_Progress.Visibility = System.Windows.Visibility.Visible;
-                        PB_Progress.Maximum = total;
-                        PB_Progress.Value = current;
-                        TXT_Progress.Text = message;
-                    }
-                    else
-                    {
-                        PB_Progress.Visibility = System.Windows.Visibility.Hidden;
-                        TXT_Progress.Visibility = System.Windows.Visibility.Hidden;
-                    }
-                }));
+                new Action(() => { }),
+                System.Windows.Threading.DispatcherPriority.Background);
         }
 
         private void LV_ModelCat_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
