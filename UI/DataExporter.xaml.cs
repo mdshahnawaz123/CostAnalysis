@@ -18,6 +18,8 @@ using System.Text;
 using System.Windows;
 using System.Windows.Data;
 using System.Windows.Input;
+using System.Windows.Interop;
+using System.Runtime.InteropServices;
 using System.Windows.Navigation;
 
 namespace CostAnalysis.UI
@@ -92,6 +94,12 @@ namespace CostAnalysis.UI
             DG_Types.SelectionChanged += DG_Types_SelectionChanged;
         }
 
+        protected override void OnSourceInitialized(EventArgs e)
+        {
+            base.OnSourceInitialized(e);
+            IconHelper.RemoveIcon(this);
+        }
+
         #region INotify
         public event PropertyChangedEventHandler PropertyChanged;
         private void OnPropertyChanged(string n) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(n));
@@ -103,16 +111,16 @@ namespace CostAnalysis.UI
         {
             if (current < total && total > 0)
             {
-                PB_Progress.Visibility = Visibility.Visible;
-                TXT_Progress.Visibility = Visibility.Visible;
+                PB_Progress.Visibility = System.Windows.Visibility.Visible;
+                TXT_Progress.Visibility = System.Windows.Visibility.Visible;
                 PB_Progress.Maximum = total;
                 PB_Progress.Value = current;
                 TXT_Progress.Text = message;
             }
             else
             {
-                PB_Progress.Visibility = Visibility.Hidden;
-                TXT_Progress.Visibility = Visibility.Hidden;
+                PB_Progress.Visibility = System.Windows.Visibility.Hidden;
+                TXT_Progress.Visibility = System.Windows.Visibility.Hidden;
             }
 
             // Force layout and render updates
@@ -877,6 +885,39 @@ namespace CostAnalysis.UI
 
         public event PropertyChangedEventHandler PropertyChanged;
         private void OnPropertyChanged(string n) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(n));
+    }
+
+    public static class IconHelper
+    {
+        [DllImport("user32.dll")]
+        static extern int GetWindowLong(IntPtr hwnd, int index);
+
+        [DllImport("user32.dll")]
+        static extern int SetWindowLong(IntPtr hwnd, int index, int newStyle);
+
+        [DllImport("user32.dll")]
+        static extern bool SetWindowPos(IntPtr hwnd, IntPtr hwndInsertAfter, int x, int y, int width, int height, uint flags);
+
+        [DllImport("user32.dll", CharSet = CharSet.Auto)]
+        static extern IntPtr SendMessage(IntPtr hwnd, uint msg, IntPtr wParam, IntPtr lParam);
+
+        const int GWL_EXSTYLE = -20;
+        const int WS_EX_DLGMODALFRAME = 0x0001;
+        const int SWP_NOSIZE = 0x0001;
+        const int SWP_NOMOVE = 0x0002;
+        const int SWP_NOZORDER = 0x0004;
+        const int SWP_FRAMECHANGED = 0x0020;
+        const uint WM_SETICON = 0x0080;
+
+        public static void RemoveIcon(Window window)
+        {
+            var hwnd = new WindowInteropHelper(window).Handle;
+            int extendedStyle = GetWindowLong(hwnd, GWL_EXSTYLE);
+            SetWindowLong(hwnd, GWL_EXSTYLE, extendedStyle | WS_EX_DLGMODALFRAME);
+            SendMessage(hwnd, WM_SETICON, new IntPtr(1), IntPtr.Zero);
+            SendMessage(hwnd, WM_SETICON, IntPtr.Zero, IntPtr.Zero);
+            SetWindowPos(hwnd, IntPtr.Zero, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
+        }
     }
 
     #endregion
