@@ -4,7 +4,7 @@
         xmlns:local="clr-namespace:CostAnalysis.UI"
         Title="Data Exporter" Width="1100" Height="750" ResizeMode="NoResize"
         WindowStartupLocation="CenterOwner" FontFamily="Segoe UI" Background="#FFF7F8FA"
-        UseLayoutRounding="True" SnapsToDevicePixels="True">
+        UseLayoutRounding="True" SnapsToDevicePixels="True" KeyDown="Window_KeyDown">
 
     <Window.Resources>
         <Color x:Key="AccentColor">#2176FF</Color>

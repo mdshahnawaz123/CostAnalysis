@@ -219,6 +219,26 @@ namespace CostAnalysis.UI
             catch (Exception ex) { MessageBox.Show("Highlight failed: " + ex.Message + "\n\nPlease contact support: mohammad.shahnawaz@expocitydubai.ae"); }
         }
 
+        private void Window_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.F1)
+            {
+                try
+                {
+                    var helpPath = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location), "Resources", "Help.html");
+                    if (System.IO.File.Exists(helpPath))
+                    {
+                        Process.Start(new ProcessStartInfo(helpPath) { UseShellExecute = true });
+                    }
+                }
+                catch
+                {
+                    // Ignore exceptions if help fails to open
+                }
+                e.Handled = true;
+            }
+        }
+
         #endregion
 
         #region Build lists

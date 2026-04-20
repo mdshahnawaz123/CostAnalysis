@@ -46,10 +46,10 @@ namespace CostAnalysis
                 }
 
                 // Add Data Exporter Button
-                AddPushButton(panel, "QC_Analysis_DataExporter", "Data Exporter", "CostAnalysis.Command.PramCheck", "Open Data Exporter (BOQ & QA-QC)");
+                AddPushButton(panel, "QC_Analysis_DataExporter", "Data Exporter", "CostAnalysis.Command.PramCheck", "Open Data Exporter (BOQ & QA-QC)", "Help.html");
 
                 // Add Quality Check Button
-                AddPushButton(panel, "QC_Analysis_Quality", "Quality Check", "CostAnalysis.Command.QualityCommand", "Open Parameter Quality Check tool");
+                AddPushButton(panel, "QC_Analysis_Quality", "Quality Check", "CostAnalysis.Command.QualityCommand", "Open Parameter Quality Check tool", "Help.html");
 
                 return Result.Succeeded;
             }
@@ -61,7 +61,7 @@ namespace CostAnalysis
             }
         }
 
-        private void AddPushButton(RibbonPanel panel, string internalName, string text, string className, string tooltip)
+        private void AddPushButton(RibbonPanel panel, string internalName, string text, string className, string tooltip, string helpFileName = null)
         {
             if (PanelHasButton(panel, internalName)) return;
 
@@ -69,6 +69,16 @@ namespace CostAnalysis
             {
                 ToolTip = tooltip
             };
+
+            if (!string.IsNullOrEmpty(helpFileName))
+            {
+                var helpPath = Path.Combine(Path.GetDirectoryName(AssemblyPath), "Resources", helpFileName);
+                if (File.Exists(helpPath))
+                {
+                    var help = new ContextualHelp(ContextualHelpType.ChmFile, helpPath);
+                    pushData.SetContextualHelp(help);
+                }
+            }
 
             var item = panel.AddItem(pushData) as PushButton;
             if (item != null)
