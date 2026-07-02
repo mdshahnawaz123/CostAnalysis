@@ -1,4 +1,4 @@
-﻿using CostAnalysis.Services;
+using CostAnalysis.Services;
 using System.Windows;
 
 namespace CostAnalysis.UI
@@ -37,6 +37,20 @@ namespace CostAnalysis.UI
             {
                 TB_Error.Text = error;
             }
+        }
+
+        private void SignUp_RequestNavigate(object sender, System.Windows.Navigation.RequestNavigateEventArgs e)
+        {
+            try
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = e.Uri.AbsoluteUri,
+                    UseShellExecute = true
+                });
+                e.Handled = true;
+            }
+            catch { }
         }
     }
 }

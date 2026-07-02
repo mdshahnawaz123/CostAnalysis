@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Windows.Interop;
 using Autodesk.Revit.Attributes;
 using Autodesk.Revit.UI;
@@ -86,6 +86,8 @@ namespace CostAnalysis.Command
             }
         }
 
+        public static DataExporter Instance;
+
         private Autodesk.Revit.UI.Result RunMainWindow(Autodesk.Revit.DB.Document doc, Autodesk.Revit.UI.UIDocument uidoc, IntPtr revitHandle)
         {
             var user = Auth.CurrentUser;
@@ -95,10 +97,19 @@ namespace CostAnalysis.Command
                 return Autodesk.Revit.UI.Result.Failed;
             }
 
-            var frm = new DataExporter(doc, uidoc);
-            frm.WindowStartupLocation = System.Windows.WindowStartupLocation.CenterOwner;
-            new WindowInteropHelper(frm) { Owner = revitHandle };
-            frm.Show();
+            if (Instance != null)
+            {
+                Instance.Activate();
+                if (Instance.WindowState == System.Windows.WindowState.Minimized)
+                    Instance.WindowState = System.Windows.WindowState.Normal;
+                return Autodesk.Revit.UI.Result.Succeeded;
+            }
+
+            Instance = new DataExporter(doc, uidoc);
+            Instance.Closed += (s, e) => { Instance = null; };
+            Instance.WindowStartupLocation = System.Windows.WindowStartupLocation.CenterOwner;
+            new WindowInteropHelper(Instance) { Owner = revitHandle };
+            Instance.Show();
 
             return Autodesk.Revit.UI.Result.Succeeded;
         }
