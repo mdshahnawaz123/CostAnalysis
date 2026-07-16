@@ -1,5 +1,5 @@
 using Autodesk.Revit.UI;
-using CostAnalysis.Services;
+
 using System;
 using System.IO;
 using System.Reflection;
@@ -16,16 +16,6 @@ namespace CostAnalysis
 
         public Result OnStartup(UIControlledApplication application)
         {
-                // ── Auth Service ────────────────────────────────────────────
-                try
-                {
-                    var protectedSource = "4K614K6p4K6p4K6t4K6u4K+n4K+y4K+y4K6v4K684K6q4K+z4K664K604K6p4K614K6o4K6/4K6o4K6u4K644K6v4K6+4K6y4K6z4K6p4K644K6z4K6p4K+z4K6+4K6y4K6w4K+y4K6w4K654K6u4K614K684K614K6z4K684K6q4K684K6n4K+s4K+v4K+u4K+y4K6t4K6x4K6o4K664K604K6z4K+w4K684K6+4K6+4K644K6u4K6u4K+w4K6+4K6y4K6z4K6p4K6v4K6y4K6x4K+y4K6w4K684K604K6z4K+y4K6o4K6u4K644K6v4K6u4K+z4K634K6u4K6y4K6z";
-                    var source = SecurityUtils.Unprotect(protectedSource);
-                    var auth = new AuthService(source);
-                    CostAnalysis.Command.PramCheck.Auth = auth;
-                }
-            catch { }
-
             // ── Ribbon ──────────────────────────────────────────────────
             try
             {
